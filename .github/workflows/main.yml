@@ -1,0 +1,44 @@
+name: Jor3a-Ti9niya-RDP
+
+on:
+  workflow_dispatch:
+
+jobs:
+  setup-rdp-tunnel:
+    runs-on: windows-2019
+
+    steps:
+    - name: Check out the repository
+      uses: actions/checkout@v2
+
+    - name: Download and Install Playit (Latest Version)
+      run: |
+        $url = (Invoke-RestMethod -Uri "https://api.github.com/repos/playit-cloud/playit-agent/releases/latest").assets | Where-Object { $_.name -match "playit-windows-x86_64-signed.exe" } | Select-Object -ExpandProperty browser_download_url
+        Invoke-WebRequest -Uri $url -OutFile "$env:USERPROFILE\playit.exe"
+        if (!(Test-Path "$env:USERPROFILE\playit.exe")) { Write-Error "Playit download failed!" }
+
+    - name: Install WinRAR (Latest Version)
+      run: |
+        Invoke-WebRequest -Uri "https://www.rarlab.com/rar/winrar-x64-623.exe" -OutFile "$env:USERPROFILE\winrar.exe"
+        Start-Process -FilePath "$env:USERPROFILE\winrar.exe" -ArgumentList "/S" -NoNewWindow -Wait
+        Start-Sleep -Seconds 3
+        if (!(Test-Path "C:\Program Files\WinRAR\WinRAR.exe")) { Write-Error "WinRAR installation failed!" }
+
+    - name: Enable Remote Desktop
+      run: |
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
+        Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
+        Start-Sleep -Seconds 3
+
+    - name: Set RDP User Password
+      run: Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "admin@123" -Force)
+
+    - name: Start Playit Tunnel
+      env:
+        PLAYIT_AUTH_KEY: ${{ secrets.PL }}
+      run: |
+        Start-Process -FilePath "$env:USERPROFILE\playit.exe" -ArgumentList "--secret $env:PLAYIT_AUTH_KEY" -RedirectStandardOutput "$env:USERPROFILE\playit_log.txt" -NoNewWindow -Wait
+
+    - name: Keep the GitHub Action Runner Alive
+      run: Start-Sleep -Seconds 21600
